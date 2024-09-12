@@ -23,9 +23,11 @@ from .environments import (
     HalfCheetah,
     InTheGrid,
     InTheGrid_2p,
+    InTheMatrix,
     Hanabi,
     Overcooked,
     CoinGame,
+    JaxNav,
 )
 
 
@@ -93,6 +95,8 @@ def make(env_id: str, **env_kwargs):
     # 5. InTheGrid
     elif env_id == "storm_2p":
         env = InTheGrid_2p(**env_kwargs)
+    elif env_id == "storm_np":
+        env = InTheMatrix(**env_kwargs)
     
     # 6. Hanabi
     elif env_id == "hanabi":
@@ -105,6 +109,10 @@ def make(env_id: str, **env_kwargs):
     # 8. Coin Game
     elif env_id == "coin_game":
         env = CoinGame(**env_kwargs)
+        
+    # 9. JaxNav
+    elif env_id == "jaxnav":
+        env = JaxNav(**env_kwargs)
 
     return env
 
@@ -133,7 +141,9 @@ registered_envs = [
     "walker2d_2x3",
     "storm",
     "storm_2p",
+    "storm_np",
     "hanabi",
     "overcooked",
     "coin_game",
+    "jaxnav",
 ]
