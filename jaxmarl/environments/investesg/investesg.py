@@ -1,3 +1,5 @@
+from dataclasses import field, replace
+from typing import Dict, List
 import jax
 import jax.numpy as jnp
 from jax import random
@@ -6,6 +8,8 @@ from jax import vmap
 from jaxmarl.environments import MultiAgentEnv
 from jaxmarl.environments import spaces
 import numpy as np
+import chex
+from flax import struct
 
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -14,39 +18,59 @@ from matplotlib.colors import ListedColormap, Normalize
 import seaborn as sns
 import itertools
 
-from flax import struct
-
+@struct.dataclass
 class Company:
-    def __init__(self, capital=6, climate_risk_exposure = 0.07, beta = 0.1667, greenwash_esg_coef = 2):
-        self.initial_capital = capital                      # initial capital, in trillion USD
-        self.capital = capital                              # current capital, in trillion USD
-        self.beta = beta                                    # Beta risk factor against market performance
+    initial_capital: float = 6
+    capital: float = 6
+    beta: float = 0.1667
+    initial_resilience: float = 0.07
+    resilience: float = 0.07
+    resilience_incr_rate: float = 3
+    cumu_mitigation_amount: float = 0
+    cumu_greenwash_amount: float = 0
+    cumu_resilience_amount: float = 0
+    margin: float = 0
+    capital_gain: float = 0
+    mitigation_pc: float = 0
+    greenwash_pc: float = 0
+    resilience_pc: float = 0
+    mitigation_amount: float = 0
+    greenwash_amount: float = 0
+    resilience_amount: float = 0
+    esg_score: float = 0
+    bankrupt: bool = False
+    greenwash_esg_coef: float = 2
 
-        self.initial_resilience \
-            = climate_risk_exposure                         # initial climate risk exposure
-        self.resilience \
-            = climate_risk_exposure                         # capital loss ratio when a climate event occurs
-        
-        self.resilience_incr_rate = 3                 # increase rate of climate resilience
-        self.cumu_mitigation_amount = 0    # cumulative amount invested in emissions mitigation, in trillion USD
-        self.cumu_greenwash_amount = 0      # cumulative amount invested in greenwashing, in trillion USD
-        self.cumu_resilience_amount = 0                   # cumulative amount invested in resilience, in trillion USD
+    # def __init__(self, capital=6, climate_risk_exposure = 0.07, beta = 0.1667, greenwash_esg_coef = 2):
+    #     self.initial_capital = capital                      # initial capital, in trillion USD
+    #     self.capital = capital                              # current capital, in trillion USD
+    #     self.beta = beta                                    # Beta risk factor against market performance
 
-        self.margin = 0                                     # single period profit margin
-        self.capital_gain = 0                               # single period capital gain
+    #     self.initial_resilience \
+    #         = climate_risk_exposure                         # initial climate risk exposure
+    #     self.resilience \
+    #         = climate_risk_exposure                         # capital loss ratio when a climate event occurs
         
-        self.mitigation_pc = 0            # single period investment in emissions mitigation, in percentage of total capital
-        self.greenwash_pc = 0                             # single period investment in greenwashing, in percentage of total capital
-        self.resilience_pc = 0                      # single period investment in resilience, in percentage of total capital
-        
-        self.mitigation_amount = 0        # amount of true emissions mitigation investment, in trillion USD
-        self.greenwash_amount = 0                # amount of greenwashing investment, in trillion USD
-        self.resilience_amount = 0               # amount of resilience investment, in trillion USD
-        self.esg_score = 0                                  # signal to be broadcasted to investors: emissions mitigation investment / total capital,
-                                                            # adjusted for greenwashing
-        self.bankrupt = False
+    #     self.resilience_incr_rate = 3                 # increase rate of climate resilience
+    #     self.cumu_mitigation_amount = 0    # cumulative amount invested in emissions mitigation, in trillion USD
+    #     self.cumu_greenwash_amount = 0      # cumulative amount invested in greenwashing, in trillion USD
+    #     self.cumu_resilience_amount = 0                   # cumulative amount invested in resilience, in trillion USD
 
-        self.greenwash_esg_coef = greenwash_esg_coef       # coefficient of greenwashing_pc on ESG score
+    #     self.margin = 0                                     # single period profit margin
+    #     self.capital_gain = 0                               # single period capital gain
+        
+    #     self.mitigation_pc = 0            # single period investment in emissions mitigation, in percentage of total capital
+    #     self.greenwash_pc = 0                             # single period investment in greenwashing, in percentage of total capital
+    #     self.resilience_pc = 0                      # single period investment in resilience, in percentage of total capital
+        
+    #     self.mitigation_amount = 0        # amount of true emissions mitigation investment, in trillion USD
+    #     self.greenwash_amount = 0                # amount of greenwashing investment, in trillion USD
+    #     self.resilience_amount = 0               # amount of resilience investment, in trillion USD
+    #     self.esg_score = 0                                  # signal to be broadcasted to investors: emissions mitigation investment / total capital,
+    #                                                         # adjusted for greenwashing
+    #     self.bankrupt = False
+
+    #     self.greenwash_esg_coef = greenwash_esg_coef       # coefficient of greenwashing_pc on ESG score
 
     def receive_investment(self, amount):
         """Receive investment from investors."""
@@ -112,35 +136,34 @@ class Company:
             bankrupt=bankrupt
         )
     
-def reset(self):
-    """Reset the company to the initial state."""
-    return self.replace(
-        capital=self.initial_capital,
-        resilience=self.initial_resilience,
-        mitigation_pc=0,
-        mitigation_amount=0,
-        greenwash_pc=0,
-        greenwash_amount=0,
-        resilience_pc=0,
-        resilience_amount=0,
-        cumu_resilience_amount=0,
-        cumu_mitigation_amount=0,
-        cumu_greenwash_amount=0,
-        margin=0,
-        capital_gain=0,
-        esg_score=0,
-        bankrupt=False
-    )
+    def reset(self):
+        """Reset the company to the initial state."""
+        return self.replace(
+            capital=self.initial_capital,
+            resilience=self.initial_resilience,
+            mitigation_pc=0,
+            mitigation_amount=0,
+            greenwash_pc=0,
+            greenwash_amount=0,
+            resilience_pc=0,
+            resilience_amount=0,
+            cumu_resilience_amount=0,
+            cumu_mitigation_amount=0,
+            cumu_greenwash_amount=0,
+            margin=0,
+            capital_gain=0,
+            esg_score=0,
+            bankrupt=False
+        )
 
-    
+@struct.dataclass
 class Investor:
-    def __init__(self, capital=6, esg_preference=0):
-        self.initial_capital = capital      # initial capital
-        self.cash = capital              # current cash
-        self.capital = capital            # current capital including cash and investment portfolio
-        self.investments = None               # dictionary to track investments in different companies
-        self.esg_preference = esg_preference # the weight of ESG in the investor's decision making
-        self.utility = 0                     # single-period reward
+    initial_capital: float = 6
+    cash: float = 6
+    capital: float = 6
+    investments: Dict[int, float] = field(default_factory=dict)
+    esg_preference: float = 0
+    utility: float = 0
     
     def initial_investment(self, environment):
         """Invest in all companies at the beginning of the simulation."""
@@ -182,7 +205,7 @@ class Investor:
         new_investments = dict(zip(company_indices, updated_investments))
         return self.replace(investments=new_investments)
 
-    def divest(self, company_idx, environment):
+    def divest(self, investor_idx, company_idx, environment):
         """Divest from a company."""
         # Get the current investment return from the company
         investment_return = self.investments[company_idx]
@@ -209,8 +232,7 @@ class Investor:
         """Calculate reward based on market performance and ESG preferences."""
         # Check if capital is zero
         if self.capital == 0:
-            self.utility = 0
-            return
+            return self.replace(utility=0)
         # Convert investments and company indices to JAX arrays
         investments = jnp.array(list(self.investments.values()))
         company_indices = jnp.array(list(self.investments.keys()))
@@ -242,6 +264,27 @@ class Investor:
         )
 
 
+@struct.dataclass
+class State:
+
+    time: int
+    terminal: bool
+    market_performance: float = 1
+    climate_event_probability: float = 0.5
+    climate_event_occurrence: int = 0
+    companies_capitals: jnp.array = field(default_factory=lambda: jnp.array([]))
+    companies_capital_gains: jnp.array = field(default_factory=lambda: jnp.array([]))
+    companies_resiliences: jnp.array = field(default_factory=lambda: jnp.array([]))
+    companies_esg_scores: jnp.array = field(default_factory=lambda: jnp.array([]))
+    companies_margins: jnp.array = field(default_factory=lambda: jnp.array([]))
+    companies_bankrupts: jnp.array = field(default_factory=lambda: jnp.array([]))
+    investor_investments: jnp.array = field(default_factory=lambda: jnp.array([]))
+    investor_cash: jnp.array = field(default_factory=lambda: jnp.array([]))
+    investor_capitals: jnp.array = field(default_factory=lambda: jnp.array([]))
+    investor_utilities: jnp.array = field(default_factory=lambda: jnp.array([]))
+    
+    
+    
 class InvestESG(MultiAgentEnv):
     """
     JAX Compatible version of ESG investment environment.
@@ -291,8 +334,8 @@ class InvestESG(MultiAgentEnv):
         self.climate_event_occurrence = 0 # number of climate events occurred in the current step
         self.action_capping = action_capping # action capping for company action
         # initialize investors with initial investments dictionary
-        for investor in self.investors:
-            investor.initial_investment(self)
+        for idx, investor in enumerate(self.investors):
+            self.investors[idx] = investor.initial_investment(self)
 
         # initialize historical data storage
         self.history = {
@@ -337,8 +380,96 @@ class InvestESG(MultiAgentEnv):
         observation_size = self.num_companies * 4 + self.num_investors * (self.num_companies + 1)
         observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(observation_size,))
         return observation_space
+    
+    def lose_investment(self, state, company_idx, amount):
+        """Lose investment due to climate event."""
+        capital = state.companies_capitals.at[company_idx].get()
+        return state.replace(companies_capitals=state.companies_capitals.at[company_idx].set(capital - amount))
+    
+    def receive_investment(self, state, company_idx, amount):
+        """Receive investment from investors."""
+        capital = state.companies_capitals.at[company_idx].get()
+        return state.replace(companies_capitals=state.companies_capitals.at[company_idx].set(capital + amount))
+    
+    def make_esg_decision(self, state, company_idx, mitigation_pc, greenwash_pc, resilience_pc):
+        """Make a decision on how to allocate capital."""
+        # Calculate updated investment amounts for a single period
+        capital = state.companies_capitals.at[company_idx].get()
+        mitigation_amount = mitigation_pc * capital
+        greenwash_amount = greenwash_pc * capital
+        resilience_amount = resilience_pc * capital
 
-    def step(self, actions):
+        # Calculate updated cumulative investment
+        cumu_mitigation_amount = self.cumu_mitigation_amount + mitigation_amount
+        cumu_greenwash_amount = self.cumu_greenwash_amount + greenwash_amount
+        cumu_resilience_amount = self.cumu_resilience_amount + resilience_amount
+
+        # Update resilience
+        resilience = self.initial_resilience * jnp.exp(
+            -self.resilience_incr_rate * (cumu_resilience_amount / self.capital)
+        )
+
+        # Update ESG score
+        esg_score = mitigation_pc + greenwash_pc * self.companies[company_idx].greenwash_esg_coef
+
+        # Return a new instance of the object with updated values
+        return self.replace(
+            mitigation_amount=mitigation_amount,
+            greenwash_amount=greenwash_amount,
+            resilience_amount=resilience_amount,
+            cumu_mitigation_amount=cumu_mitigation_amount,
+            cumu_greenwash_amount=cumu_greenwash_amount,
+            cumu_resilience_amount=cumu_resilience_amount,
+            resilience=resilience,
+            esg_score=esg_score
+        )
+
+
+    def update_capital(self, environment):
+        """Update the capital based on market performance and climate event."""
+        # add a random disturbance to market performance
+        company_performance = random.normal(random.PRNGKey(0), shape=()) * self.beta + environment.market_performance
+        # New capital considering mitigation, resilience, and greenwashing investments
+        new_capital = self.capital * (1 - self.mitigation_pc - self.resilience_pc - self.greenwash_pc) * company_performance
+        # Climate event impact on capital
+        if environment.climate_event_occurrence > 0:
+            new_capital *= (1 - self.resilience) ** environment.climate_event_occurrence
+        # Calculate margin and capital gain
+        capital_gain = new_capital - self.capital
+        margin = capital_gain / self.capital
+        # Check if bankrupt
+        bankrupt = new_capital <= 0
+        # Return a new object with updated capital, gain, margin, and bankruptcy status
+        return self.replace(
+            capital=new_capital,
+            capital_gain=capital_gain,
+            margin=margin,
+            bankrupt=bankrupt
+        )
+    
+    def divest(self, state, investor_idx, company_idx):
+        """Divest from a company."""
+        investments = state.investor_investments[investor_idx]
+        cash = state.investor_cash[investor_idx]
+        # Get the current investment return from the company
+        investment_return = investments[company_idx]
+        # Update cash by adding the investment return (immutably)
+        new_investor_cash = state.investor_cash.at[investor_idx].set(cash + investment_return)
+        # Update the investments array immutably using JAX's index_update
+        new_investments = jax.ops.index_update(state.investor_investments, jax.ops.index[investor_idx, company_idx], 0)
+        # Update the company in the environment immutably
+        # Immutably update the company in the environment
+        new_state = self.lose_investment(state, company_idx, investment_return)
+        return new_state.replace(investor_cash=new_investor_cash, 
+                                 investments=new_investments)
+
+
+    def step_env(
+            self,
+            key: chex.PRNGKey,
+            state,
+            actions: Dict[str, chex.Array],
+    ):
         """Step function for the environment."""
         ## unpack actions
         # first num_companies actions are for companies, the rest are for investors
@@ -346,23 +477,24 @@ class InvestESG(MultiAgentEnv):
         remaining_actions = {k: v for k, v in actions.items() if k not in companys_actions}
         # Reindex investor actions to start from 0
         investors_actions = {f"investor_{i}": action for i, (k, action) in enumerate(remaining_actions.items())}
-
+        import pdb; pdb.set_trace()
         ## action masks
         # if company is brankrupt, it cannot invest in ESG or greenwashing
-        for i, company in enumerate(self.companies):
-            if company.bankrupt:
+        for i, company_bankrupt in enumerate(state.companies_bankrupts):
+            if company_bankrupt:
                 companys_actions[f"company_{i}"] = jnp.array([0.0, 0.0, 0.0])
 
         # 0. investors divest from all companies and recollect capital
         # Vectorize the divestment process for all investors
-        updated_investors, updated_env = jax.lax.scan(
-            lambda carry, investor: self._divest_investor(investor, carry),
-            self,
-            self.investors
-        )
+        # updated_investors, updated_env = jax.lax.scan(
+        #     lambda carry, investor: self._divest_investor(investor, carry),
+        #     self,
+        #     self.investors
+        # )
+        updated_state = self._divest_investor(state=state)
 
         # Update the environment and investors
-        self = updated_env.replace(investors=updated_investors)
+        # self = updated_env.replace(investors=updated_investors)
 
         # 1. investors allocate capital to companies (binary decision to invest/not invest)
         # Use vmap to process all investors
@@ -412,19 +544,20 @@ class InvestESG(MultiAgentEnv):
         return self._get_observation(), self._get_reward(), termination, None
 
 
-    def _divest_investor(investor, environment):
+    def _divest_investor(self, state):
         # Vectorized function to apply divestment across all companies
-        def divest_company(company_idx, env):
-            return investor.divest(company_idx, env)
+        def divest_company(state, investor_idx, company_idx):
+            return self.divest(state=state, investor_idx=investor_idx, company_idx=company_idx)
         
         # Vectorize divestment across all companies in investor's investments
-        new_investor, new_env = jax.lax.scan(
-            lambda carry, company_idx: divest_company(company_idx, carry),
-            environment,
-            jnp.array(list(investor.investments.keys()))
+        new_state = jax.lax.scan(
+            divest_company,
+            state,
+            jnp.arrange(len(self.investors)),
+            jnp.arrange(len(self.companies))
         )
         
-        return new_investor, new_env
+        return new_state
     
     def _process_investor_actions(investor, investor_action, companies):
         """Process investor actions and update company investments."""
@@ -470,20 +603,26 @@ class InvestESG(MultiAgentEnv):
     def _calculate_investor_utility(investor, environment):
         return investor.calculate_utility(environment)
 
-    def _get_observation(self):
+    def _get_observation(self, state: State):
         """Get observation for each company and investor. Public information is shared across all agents."""
-        # Helper function to get a company's observation
-        def get_company_obs(company):
-            return jnp.array([company.capital, company.resilience, company.esg_score, company.margin])
-        # Helper function to get an investor's observation
-        def get_investor_obs(investor):
-            investments_obs = jnp.array(list(investor.investments.values()))
-            return jnp.concatenate([investments_obs, jnp.array([investor.capital])])
 
-        company_obs = jax.vmap(get_company_obs)(jnp.array(self.companies))
-        investor_obs = jax.vmap(get_investor_obs)(jnp.array(self.investors))
+        # Vectorized function to map over companies
+        def vectorized_get_company_obs(state):
+            capital, resilience, esg_score, margin = state.companies_capitals, state.companies_resiliences, state.companies_esg_scores, state.companies_margins
+            return jnp.stack([capital, resilience, esg_score, margin], axis=1)
+
+        # Vectorized function to map over investors
+        def vectorized_get_vestor_obs(state):
+            investments, capitals = state.investor_investments, state.investor_capitals[:, jnp.newaxis]
+            return jnp.concatenate([investments, capitals], axis=1)
+
+        company_obs = vectorized_get_company_obs(state)
+        investor_obs = vectorized_get_vestor_obs(state)
         full_obs = jnp.concatenate([company_obs.flatten(), investor_obs.flatten()])
         return {agent: full_obs for agent in self.agents}
+
+    def _get_infos(self):
+        return {}
 
     def _get_reward(self):
         """Get reward for all agents."""
@@ -502,8 +641,15 @@ class InvestESG(MultiAgentEnv):
         rewards = {**dict(company_rewards), **dict(investor_rewards)}
         return rewards
 
-    def reset(self, seed=None, options=None):
+    def reset(self, key=None):
         """Reset the environment."""
+        state = State(
+            time=0,
+            terminal=False,
+            market_performance=1,
+            climate_event_probability=self.initial_climate_event_probability,
+            climate_event_occurrence=0
+        )
         
         # Helper function to reset each company
         def reset_company(company):
@@ -514,15 +660,15 @@ class InvestESG(MultiAgentEnv):
             return investor.reset()
 
         # Reset all companies and investors using vmap
-        updated_companies = jax.vmap(reset_company)(jnp.array(self.companies))
-        updated_investors = jax.vmap(reset_investor)(jnp.array(self.investors))
+        updated_companies = [reset_company(company) for company in self.companies]
+
+        # updated_companies = jax.vmap(reset_company)(jnp.array(self.companies))
+        updated_investors = [reset_investor(investor) for investor in self.investors]
+        # jax.vmap(reset_investor)(jnp.array(self.investors))
 
         # Reset the environment attributes immutably
         agents = [f"company_{i}" for i in range(self.num_companies)] + [f"investor_{i}" for i in range(self.num_investors)]
-        market_performance = 1
-        climate_event_probability = self.initial_climate_event_probability
-        climate_event_occurrence = 0
-        timestamp = 0
+        
         
         # Reset historical data
         history = {
@@ -547,19 +693,21 @@ class InvestESG(MultiAgentEnv):
             "investor_rewards": [[] for _ in range(self.num_investors)],
         }
 
+        new_state = state.replace(
+            companies_capitals=jnp.array([company.capital for company in self.companies]),
+            companies_capital_gains=jnp.array([company.capital_gain for company in self.companies]),
+            companies_resiliences=jnp.array([company.resilience for company in self.companies]),
+            companies_esg_scores=jnp.array([company.esg_score for company in self.companies]),
+            companies_margins=jnp.array([company.margin for company in self.companies]),
+            companies_bankrupts=jnp.array([company.bankrupt for company in self.companies]),
+            investor_investments=jnp.array([list(investor.investments.values()) for investor in self.investors]),
+            investor_cash=jnp.array([investor.capital for investor in self.investors]),
+            investor_capitals=jnp.array([investor.capital for investor in self.investors]),
+            investor_utilities=jnp.array([investor.utility for investor in self.investors]),
+        )
+
         # Return a new environment object with updated state
-        return self.replace(
-            companies=updated_companies,
-            investors=updated_investors,
-            agents=agents,
-            market_performance=market_performance,
-            climate_event_probability=climate_event_probability,
-            climate_event_occurrence=climate_event_occurrence,
-            timestamp=timestamp,
-            history=history,
-            fig=None,
-            ax=None
-        ), self._get_observation(), self._get_infos()
+        return new_state, self._get_observation(new_state), self._get_infos()
 
 
     @property

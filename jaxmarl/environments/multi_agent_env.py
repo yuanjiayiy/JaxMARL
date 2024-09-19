@@ -48,7 +48,6 @@ class MultiAgentEnv(object):
     ) -> Tuple[Dict[str, chex.Array], State, Dict[str, float], Dict[str, bool], Dict]:
         """Performs step transitions in the environment. Resets the environment if done.
         To control the reset state, pass `reset_state`. Otherwise, the environment will reset randomly."""
-
         key, key_reset = jax.random.split(key)
         obs_st, states_st, rewards, dones, infos = self.step_env(key, state, actions)
 
