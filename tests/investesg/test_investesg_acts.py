@@ -16,13 +16,15 @@ def test_random_rollout():
     rng = jax.random.PRNGKey(0)
     rng, rng_reset = jax.random.split(rng)
 
-    state, obs = env.reset(rng_reset)
+    obs, state = env.reset(rng_reset)
+    reset_state = state
     
-    for _ in range(10):
+    
+    for i in range(10):
         rng, rng_act = jax.random.split(rng)
         rng_act = jax.random.split(rng_act, env.n_agents)
         actions = {a: env.action_space(a).sample(rng_act[i]) for i, a in enumerate(env.agents)}
-        _, state, _, _, _ = env.step(key=rng, state=state, actions=actions)
+        _, state, _, _, _ = env.step(key=rng, state=state, actions=actions, reset_state=reset_state)
         
 
     

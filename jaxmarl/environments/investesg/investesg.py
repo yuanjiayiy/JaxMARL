@@ -144,6 +144,7 @@ class Company:
             bankrupt=bankrupt
         )
     
+    
     def reset(self):
         """Reset the company to the initial state."""
         return self.replace(
@@ -245,9 +246,9 @@ class Investor:
             return new_capital, profit_rate + self.esg_preference * avg_esg_reward
         # Check if capital is zero
         capital, utility = jax.lax.cond(
-                    self.capital == 0,
-                    lambda _: (jnp.array(0.0), jnp.array(0.0)),  # if num_investments is 0, return 0
-                    lambda _: get_utility(),  # else calculate the investment amount
+                    self.capital > 0,
+                    lambda _: get_utility(),  # if num_investments is 0, return 0
+                    lambda _: (jnp.array(0.0), jnp.array(0.0)), # else calculate the investment amount
                     None
         )
 
@@ -539,9 +540,9 @@ class InvestESG(MultiAgentEnv):
             def calculate_investment_amount(investor_cash, num_investments):
                 # Use jax.lax.cond to check if num_investments is 0
                 investment_amount = jax.lax.cond(
-                    num_investments == 0,
-                    lambda _: jnp.array(0.0),  # if num_investments is 0, return 0
-                    lambda _: jnp.floor(investor_cash / num_investments),  # else calculate the investment amount
+                    num_investments > 0,
+                    lambda _: jnp.floor(investor_cash / num_investments),  # if num_investments is 0, return 0
+                    lambda _: jnp.array(0.0),  # else calculate the investment amount
                     None
                 )
                 return investment_amount
@@ -549,9 +550,9 @@ class InvestESG(MultiAgentEnv):
             for j, company in enumerate(state.companies):
                 def i_invest_in_j(i, j, investment_amount):
                     investor, company = jax.lax.cond(
-                        investor_action[j] == 0,
-                        lambda _: (investors[i], companies[j]),  # if not invest, return the same
-                        lambda _: (investors[i].invest(investment_amount, j), companies[j].receive_investment(investment_amount)), # else calculate the investment amount
+                        investor_action[j] > 0,
+                        lambda _: (investors[i].invest(investment_amount, j), companies[j].receive_investment(investment_amount)), # if not invest, return the same
+                        lambda _: (investors[i], companies[j]), # else calculate the investment amount
                         None
                     )
                     return investor, company
@@ -592,12 +593,14 @@ class InvestESG(MultiAgentEnv):
         state = state.replace(time=state.time + 1)
         state = state.replace(terminal=state.time >= self.max_steps)
 
+        dones = {"__all__": state.terminal}
+
         # 8. update history
         # self = self.replace(history=self._update_history())
         # if state.terminal:
         #     state = state.reset()
 
-        return self._get_observation(state), state, self._get_reward(state), state.terminal, None
+        return self._get_observation(state), state, self._get_reward(state), dones, None
 
 
     def _divest_investor(self, state, investor):
@@ -702,8 +705,8 @@ class InvestESG(MultiAgentEnv):
         # Combine both company and investor rewards into a dictionary
         rewards = {**dict(company_rewards), **dict(investor_rewards)}
         return rewards
-
-    def reset(self, key=None):
+    
+    def reset(self, key=chex.PRNGKey):
         """Reset the environment."""
         
         # Helper function to reset each company
@@ -760,7 +763,7 @@ class InvestESG(MultiAgentEnv):
         )
 
         # Return a new environment object with updated state
-        return state, self._get_observation(state)
+        return self._get_observation(state), state
 
 
     @property

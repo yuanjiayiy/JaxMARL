@@ -261,7 +261,6 @@ class SimpleMPE(MultiAgentEnv):
 
         return obs, state, reward, dones, info
 
-    @partial(jax.jit, static_argnums=[0])
     def reset(self, key: chex.PRNGKey) -> Tuple[chex.Array, State]:
         """Initialise with random positions"""
 

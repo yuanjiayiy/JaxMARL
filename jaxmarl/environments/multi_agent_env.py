@@ -57,6 +57,7 @@ class MultiAgentEnv(object):
             states_re = reset_state
             obs_re = self.get_obs(states_re)
 
+        
         # Auto-reset environment based on termination
         states = jax.tree_map(
             lambda x, y: jax.lax.select(dones["__all__"], x, y), states_re, states_st
