@@ -16,7 +16,7 @@ def test_random_rollout():
     rng = jax.random.PRNGKey(0)
     rng, rng_reset = jax.random.split(rng)
 
-    state, obs, infos = env.reset(rng_reset)
+    state, obs = env.reset(rng_reset)
     
     for _ in range(10):
         rng, rng_act = jax.random.split(rng)
