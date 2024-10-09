@@ -18,30 +18,30 @@ from matplotlib.figure import Figure
 from matplotlib.colors import ListedColormap, Normalize
 import seaborn as sns
 import itertools
-
+jax.config.update('jax_numpy_dtype_promotion', 'strict')
 
 @struct.dataclass
 class Company:
-    bankrupt: bool = struct.field(pytree_node=False)
-    initial_capital: float = 6
-    capital: float = 6
+    bankrupt: bool = False
+    initial_capital: float = 6.0
+    capital: float = 6.0
     beta: float = 0.1667
     initial_resilience: float = 0.07
     resilience: float = 0.07
-    resilience_incr_rate: float = 3
-    cumu_mitigation_amount: float = 0
-    cumu_greenwash_amount: float = 0
-    cumu_resilience_amount: float = 0
-    margin: float = 0
-    capital_gain: float = 0
-    mitigation_pc: float = 0
-    greenwash_pc: float = 0
-    resilience_pc: float = 0
-    mitigation_amount: float = 0
-    greenwash_amount: float = 0
-    resilience_amount: float = 0
-    esg_score: float = 0
-    greenwash_esg_coef: float = 2
+    resilience_incr_rate: float = 3.0
+    cumu_mitigation_amount: float = 0.0
+    cumu_greenwash_amount: float = 0.0
+    cumu_resilience_amount: float = 0.0
+    margin: float = 0.0
+    capital_gain: float = 0.0
+    mitigation_pc: float = 0.0
+    greenwash_pc: float = 0.0
+    resilience_pc: float = 0.0
+    mitigation_amount: float = 0.0
+    greenwash_amount: float = 0.0
+    resilience_amount: float = 0.0
+    esg_score: float = 0.0
+    greenwash_esg_coef: float = 2.0
 
     # def __init__(self, capital=6, climate_risk_exposure = 0.07, beta = 0.1667, greenwash_esg_coef = 2):
     #     self.initial_capital = capital                      # initial capital, in trillion USD
@@ -126,7 +126,7 @@ class Company:
 
         new_capital = jax.lax.cond(
             state.climate_event_occurrence > 0,
-            lambda _: new_capital * (1 - self.resilience) ** state.climate_event_occurrence,  # if num_investments is 0, return 0
+            lambda _: new_capital * (1.0 - self.resilience * state.climate_event_occurrence.astype('float32')),  # if num_investments is 0, return 0
             lambda _: new_capital,  # else calculate the investment amount
             None
         )
@@ -135,7 +135,7 @@ class Company:
         capital_gain = new_capital - self.capital
         margin = capital_gain / self.capital
         # Check if bankrupt
-        bankrupt = new_capital <= 0
+        bankrupt = new_capital <= 0.0
         # Return a new object with updated capital, gain, margin, and bankruptcy status
         return self.replace(
             capital=new_capital,
@@ -150,29 +150,29 @@ class Company:
         return self.replace(
             capital=self.initial_capital,
             resilience=self.initial_resilience,
-            mitigation_pc=0,
-            mitigation_amount=0,
-            greenwash_pc=0,
-            greenwash_amount=0,
-            resilience_pc=0,
-            resilience_amount=0,
-            cumu_resilience_amount=0,
-            cumu_mitigation_amount=0,
-            cumu_greenwash_amount=0,
-            margin=0,
-            capital_gain=0,
-            esg_score=0,
-            bankrupt=jnp.array(False)
+            mitigation_pc=.0,
+            mitigation_amount=.0,
+            greenwash_pc=.0,
+            greenwash_amount=.0,
+            resilience_pc=.0,
+            resilience_amount=.0,
+            cumu_resilience_amount=.0,
+            cumu_mitigation_amount=.0,
+            cumu_greenwash_amount=.0,
+            margin=.0,
+            capital_gain=.0,
+            esg_score=.0,
+            bankrupt=False
         )
 
 @struct.dataclass
 class Investor:
     investments: chex.Array 
-    initial_capital: float = 6
-    cash: float = 6
-    capital: float = 6
-    esg_preference: float = 0
-    utility: float = 0
+    initial_capital: float = 6.0
+    cash: float = 6.0
+    capital: float = 6.0
+    esg_preference: float = 0.0
+    utility: float = 0.0
     
     def initial_investment(self, environment):
         """Invest in all companies at the beginning of the simulation."""
@@ -246,31 +246,12 @@ class Investor:
             return new_capital, profit_rate + self.esg_preference * avg_esg_reward
         # Check if capital is zero
         capital, utility = jax.lax.cond(
-                    self.capital > 0,
+                    self.capital > .0,
                     lambda _: get_utility(),  # if num_investments is 0, return 0
                     lambda _: (jnp.array(0.0), jnp.array(0.0)), # else calculate the investment amount
                     None
         )
 
-        # # Convert investments and company indices to JAX arrays
-        # investments = jnp.array(list(self.investments.values()))
-        # company_indices = jnp.array(list(self.investments.keys()))
-        # # Extract ESG scores for the companies
-        # esg_scores = jnp.array([environment.companies[idx].esg_score for idx in company_indices])
-        # # Define a helper function to calculate investment balance and ESG reward
-        # def investment_calc(investment, esg_score):
-        #     return investment, esg_score * investment
-        
-        # # Vectorize the function to apply to all investments
-        # invest_balances, esg_rewards = vmap(investment_calc)(investments, esg_scores)
-        # # Calculate total investment balance and ESG reward, skipping zero investments
-        # total_invest_balance = jnp.sum(invest_balances)
-        # total_esg_reward = jnp.sum(esg_rewards)
-        # # Calculate new capital and average ESG reward
-        # new_capital = total_invest_balance + self.cash
-        # avg_esg_reward = total_esg_reward / new_capital
-        # # Calculate profit rate
-        # profit_rate = (new_capital - self.capital) / self.capital
         return self.replace(capital=capital, utility=utility)
     
     def reset(self):
@@ -287,10 +268,13 @@ class State:
 
     time: int
     terminal: bool
+    heat_prob: float
+    precip_prob: float
+    drought_prob: float
+    climate_risk: float
     companies: List[Company]
     investors: List[Investor]
-    market_performance: float = 1
-    climate_event_probability: float = 0.5
+    market_performance: float = 1.0
     climate_event_occurrence: int = 0
     
     
@@ -306,7 +290,9 @@ class InvestESG(MultiAgentEnv):
         investor_attributes=None,
         num_companies=5,
         num_investors=5,
-        initial_climate_event_probability=0.5,
+        initial_heat_prob = 0.28,
+        initial_precip_prob = 0.13,
+        initial_drought_prob = 0.17,
         max_steps=100,
         market_performance_baseline=1.1, 
         market_performance_variance=0.0,
@@ -319,10 +305,10 @@ class InvestESG(MultiAgentEnv):
 
         # initialize companies and investors based on attributes if not None
         if company_attributes is not None:
-            self.companies = [Company(**attributes, bankrupt=False) for attributes in company_attributes]
+            self.companies = [Company(**attributes) for attributes in company_attributes]
             self.num_companies = len(company_attributes)
         else:
-            self.companies = [Company(bankrupt=False) for _ in range(num_companies)]
+            self.companies = [Company() for _ in range(num_companies)]
             self.num_companies = num_companies
         
         if investor_attributes is not None:
@@ -339,8 +325,16 @@ class InvestESG(MultiAgentEnv):
         self.market_performance_variance = market_performance_variance # variance of market performance
         self.allow_resilience_investment = allow_resilience_investment # whether to allow resilience investment by companies
         self.allow_greenwash_investment = allow_greenwash_investment # whether to allow greenwash investment by companies
-        self.initial_climate_event_probability = initial_climate_event_probability # initial probability of climate event
-        self.climate_event_probability = initial_climate_event_probability # current probability of climate event
+
+        self.initial_heat_prob = initial_heat_prob # initial probability of heat wave
+        self.initial_precip_prob = initial_precip_prob # initial probability of precipitation
+        self.initial_drought_prob = initial_drought_prob # initial probability of drought
+        self.heat_prob = initial_heat_prob # current probability of heat wave
+        self.precip_prob = initial_precip_prob # current probability of precipitation
+        self.drought_prob = initial_drought_prob # current probability of drought
+        self.initial_climate_risk = 1 - (1-initial_heat_prob)*(1-initial_precip_prob)*(1-initial_drought_prob) # initial probability of at least one climate event
+        self.climate_risk = self.initial_climate_risk # current probability of climate event
+
         self.climate_event_occurrence = 0 # number of climate events occurred in the current step
         self.action_capping = action_capping # action capping for company action
         # initialize investors with initial investments dictionary
@@ -464,36 +458,22 @@ class InvestESG(MultiAgentEnv):
             bankrupt=bankrupt
         )
     
-    def divest(self, company_idx, environment):
-        """Divest from a company."""
-        # Get the current investment return from the company
-        investment_return = self.investments[company_idx]
-        # Update cash by adding the investment return (immutably)
-        new_cash = self.cash + investment_return
-        # Convert investments dict to an array for better compatibility with JAX
-        investments_array = jnp.array(list(self.investments.values()))
-        # Update the investments array immutably using JAX's index_update
-        new_investments_array = jax.ops.index_update(investments_array, company_idx, 0)
-        # Convert the updated array back to a dictionary
-        new_investments = dict(zip(self.investments.keys(), new_investments_array))
-        # Update the company in the environment immutably
-        # Immutably update the company in the environment
-        updated_company = environment.companies[company_idx].lose_investment(investment_return)
-        # Create a new dictionary of companies, where only the updated company is changed
-        new_companies = {
-            idx: (updated_company if idx == company_idx else environment.companies[idx])
-            for idx in environment.companies
-        }
-        return self.replace(cash=new_cash, investments=new_investments), environment.replace(companies=new_companies)
-
-
-
+    def is_terminal(self, state: State) -> bool:
+        """Check whether state is terminal."""
+        done_steps = state.time >= self.max_steps
+        return done_steps | state.terminal
+    
     def step_env(
             self,
             key: chex.PRNGKey,
             state,
             actions: Dict[str, chex.Array],
     ):
+
+        rng_heat = jax.random.PRNGKey(state.time*100) # random number generator for climate event
+        rng_precip = jax.random.PRNGKey(state.time*500) # random number generator for climate event
+        rng_drought = jax.random.PRNGKey(state.time*1000) # random number generator for climate event
+
         """Step function for the environment."""
         ## unpack actions
         # first num_companies actions are for companies, the rest are for investors
@@ -505,8 +485,12 @@ class InvestESG(MultiAgentEnv):
         ## action masks
         # if company is brankrupt, it cannot invest in ESG or greenwashing
         for name, company in companies.items():
-            if company.bankrupt:
-                companys_actions[name] = jnp.array([0.0, 0.0, 0.0])
+            companys_actions[name] = jax.lax.cond(
+                company.bankrupt == True,
+                lambda _: jnp.array([0.0, 0.0, 0.0]),
+                lambda _: companys_actions[name],
+                None
+            )
 
         # 0. investors divest from all companies and recollect capital
         # Vectorize the divestment process for all investors
@@ -515,17 +499,8 @@ class InvestESG(MultiAgentEnv):
         for investor_idx, investor in enumerate(investors):
             state, investors[investor_idx] = self._divest_investor(state, investors[investor_idx])
 
-        # updated_state, updated_investors = jax.lax.scan(
-        #     lambda carry, investor: self._divest_investor(carry, investor),
-        #     state,
-        #     investors
-        # )
-        # TODO: figure out how to do this properly
-
         # Update the environment and investors
         state = state.replace(investors=investors)
-
-        # updated_companies = vmap(self._process_investor_actions)(state.investors, investors_actions, state.companies)
 
         # 1. investors allocate capital to companies (binary decision to invest/not invest)
         investors = state.investors
@@ -534,19 +509,19 @@ class InvestESG(MultiAgentEnv):
             investor_action = investors_actions[f"investor_{i}"]
             # number of companies that the investor invests in
             num_investments = jnp.sum(investor_action)
-            # import pdb; pdb.set_trace()
             # equal investment in each company; round down to nearest integer to avoid exceeding capital
-            # print(f"investor {i} has {investor.cash} cash, and {investor.capital} capital")
             def calculate_investment_amount(investor_cash, num_investments):
                 # Use jax.lax.cond to check if num_investments is 0
                 investment_amount = jax.lax.cond(
                     num_investments > 0,
-                    lambda _: jnp.floor(investor_cash / num_investments),  # if num_investments is 0, return 0
+                    lambda _: jnp.floor(investor_cash / num_investments.astype('float32')),  # if num_investments is 0, return 0
                     lambda _: jnp.array(0.0),  # else calculate the investment amount
                     None
                 )
                 return investment_amount
-            investment_amount = calculate_investment_amount(investor.cash, num_investments) 
+            
+            investment_amount = calculate_investment_amount(investor.cash, num_investments)
+            
             for j, company in enumerate(state.companies):
                 def i_invest_in_j(i, j, investment_amount):
                     investor, company = jax.lax.cond(
@@ -567,14 +542,25 @@ class InvestESG(MultiAgentEnv):
 
         # 3. update probabilities of climate event based on cumulative ESG investments across companies
         total_mitigation_investment = jnp.sum(jnp.array([company.cumu_mitigation_amount for company in self.companies]))
-        climate_event_probability =  self.initial_climate_event_probability + 0.014*self.timestamp/(1+0.028*total_mitigation_investment)
-        state = state.replace(climate_event_probability=climate_event_probability)
+        self.heat_prob = self.initial_heat_prob + 0.0083*state.time/(1+0.0222*total_mitigation_investment)
+        self.precip_prob = self.initial_precip_prob + 0.0018*state.time/(1+0.0326*total_mitigation_investment)
+        self.drought_prob = self.initial_drought_prob + 0.003*state.time/(1+0.038*total_mitigation_investment)
+        self.climate_risk = 1 - (1-self.heat_prob)*(1-self.precip_prob)*(1-self.drought_prob)
+        state = state.replace(
+            heat_prob = self.heat_prob,
+            precip_prob = self.precip_prob,
+            drought_prob = self.drought_prob,
+            climate_risk = self.climate_risk
+        )
 
         # 4. market performance and climate event evolution
         rng_key = key
         rng_key, rng_key1, rng_key2 = random.split(rng_key, 3)
         new_market_performance = random.normal(rng_key1) * self.market_performance_variance + self.market_performance_baseline
-        climate_event_occurrence = int(self.climate_event_probability) + (random.uniform(rng_key2) < self.climate_event_probability % 1).astype(int)
+        heat_event = (random.uniform(random.split(rng_heat)[1]) < self.heat_prob).astype(int)
+        precip_event = (random.uniform(random.split(rng_precip)[1]) < self.precip_prob).astype(int)
+        drought_event = (random.uniform(random.split(rng_drought)[1]) < self.drought_prob).astype(int)
+        climate_event_occurrence = heat_event + precip_event + drought_event
         state = state.replace(
             market_performance=new_market_performance,
             climate_event_occurrence=climate_event_occurrence
@@ -591,20 +577,21 @@ class InvestESG(MultiAgentEnv):
 
         # 7. termination and truncation
         state = state.replace(time=state.time + 1)
-        state = state.replace(terminal=state.time >= self.max_steps)
+        done = self.is_terminal(state)
+        state = state.replace(terminal=done)
 
-        dones = {"__all__": state.terminal}
+        dones = {"agent_0": done, "agent_1": done, "__all__": done}
 
         # 8. update history
         # self = self.replace(history=self._update_history())
         # if state.terminal:
         #     state = state.reset()
 
-        return self._get_observation(state), state, self._get_reward(state), dones, None
+        return (self._get_observation(state), state, self._get_reward(state), dones, None)
 
 
     def _divest_investor(self, state, investor):
-        jax.debug.print("Carry: {}, investor: {}", state, investor)
+        # jax.debug.print("Carry: {}, investor: {}", state, investor)
         # Vectorized function to apply divestment across all companies
         def divest_company(company_idx, state):
             return investor.divest(company_idx, state)
@@ -634,34 +621,49 @@ class InvestESG(MultiAgentEnv):
     
     def _process_company(self, company, action):
         """Update company's actions and make ESG decisions."""
+
+        def process_company_action():
+            # Unpack actions and apply conditions for greenwash and resilience investment
+            mitigation_pc, greenwash_pc, resilience_pc = action
+            greenwash_pc = greenwash_pc if self.allow_greenwash_investment else 0.0
+            resilience_pc = resilience_pc if self.allow_resilience_investment else 0.0
+
+            # Update the company's percentages and make ESG decisions immutably
+            updated_company = company.replace(
+                mitigation_pc=mitigation_pc,
+                greenwash_pc=greenwash_pc,
+                resilience_pc=resilience_pc
+            )
+            # Call the ESG decision-making method (must return an updated company)
+            return updated_company.make_esg_decision()
         
-        # Skip if the company is bankrupt
-        if company.bankrupt:
-            return company
-
-        # Unpack actions and apply conditions for greenwash and resilience investment
-        mitigation_pc, greenwash_pc, resilience_pc = action
-        greenwash_pc = greenwash_pc if self.allow_greenwash_investment else 0.0
-        resilience_pc = resilience_pc if self.allow_resilience_investment else 0.0
-
-        # Update the company's percentages and make ESG decisions immutably
-        updated_company = company.replace(
-            mitigation_pc=mitigation_pc,
-            greenwash_pc=greenwash_pc,
-            resilience_pc=resilience_pc
+        updated_company = jax.lax.cond(
+            company.bankrupt,
+            lambda _: company,
+            lambda _: process_company_action(),
+            None
         )
-
-        # Call the ESG decision-making method (must return an updated company)
-        return updated_company.make_esg_decision()
+        return updated_company
 
     def _update_company_capital(self, company, state):
-        return company.update_capital(state) if not company.bankrupt else company
+        updated_company = jax.lax.cond(
+            company.bankrupt,
+            lambda _: company,
+            lambda _: company.update_capital(state),
+            None
+        )
+        return updated_company
     
     def _update_investor_returns(self, investor, state):
         return investor.update_investment_returns(state)
     
     def _calculate_investor_utility(self, investor, state):
         return investor.calculate_utility(state)
+    
+    @partial(jax.jit, static_argnums=[0])
+    def get_obs(self, state: State) -> chex.Array:
+        obs_batch = self._get_observation(state)
+        return obs_batch
 
     def _get_observation(self, state: State):
         """Get observation for each company and investor. Public information is shared across all agents."""
@@ -675,6 +677,8 @@ class InvestESG(MultiAgentEnv):
             resilience = jnp.array([company.resilience for company in companies.values()])
             esg_score = jnp.array([company.esg_score for company in companies.values()])
             margin = jnp.array([company.margin for company in companies.values()])
+            # TODO: Add more information such as avg esg, esg spending, resilience spending
+            # additional_info = jnp.array((3, len(companies.values())))
             return jnp.stack([capital, resilience, esg_score, margin], axis=1)
 
         # Vectorized function to map over investors
@@ -685,6 +689,9 @@ class InvestESG(MultiAgentEnv):
 
         company_obs = vectorized_get_company_obs()
         investor_obs = vectorized_get_vestor_obs()
+        
+        # TODO: Add climate data
+        # climate_obs = jnp.zeros(3)
         full_obs = jnp.concatenate([company_obs.flatten(), investor_obs.flatten()])
         return {agent: full_obs for agent in self.agents}
 
@@ -755,8 +762,11 @@ class InvestESG(MultiAgentEnv):
         state = State(
             time=0,
             terminal=False,
-            market_performance=1,
-            climate_event_probability=self.initial_climate_event_probability,
+            market_performance=1.0,
+            heat_prob=self.initial_heat_prob,
+            precip_prob=self.initial_precip_prob,
+            drought_prob=self.initial_drought_prob,
+            climate_risk=self.initial_climate_risk,
             climate_event_occurrence=0,
             companies=updated_companies,
             investors=updated_investors
@@ -933,14 +943,7 @@ class InvestESG(MultiAgentEnv):
             img = np.frombuffer(self.canvas.tostring_rgb(), dtype='uint8').reshape(int(height), int(width), 3)
             return img
         
-    def is_terminal(self) -> bool:
-        """Check if the environment has reached a terminal state."""
-        if self.timestamp >= self.max_steps:
-            return True
         
-        
-
-
 if __name__ == "__main__":
     env = InvestESG()
     print(env.action_space())
