@@ -608,6 +608,7 @@ class HanabiEnv(HanabiGame):
         def get_actor_hand_str(aidx: int) -> str:
             # get the index of an actor and returns its hand (with knowledge per card) as string
             # TODO: missing the first numbers, don't know what they are
+            import pdb; pdb.set_trace()
 
             colors_revealed = np.array(state.colors_revealed[aidx])
             ranks_revealed = np.array(state.ranks_revealed[aidx])
@@ -617,6 +618,7 @@ class HanabiEnv(HanabiGame):
                 )
             )
             actor_hand = np.array(state.player_hands[aidx])
+            
 
             def get_card_knowledge_str(card_idx: int) -> str:
                 color_hint = colors_revealed[card_idx]

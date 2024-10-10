@@ -123,7 +123,6 @@ class Company:
         # New capital considering mitigation, resilience, and greenwashing investments
         new_capital = self.capital * (1 - self.mitigation_pc - self.resilience_pc - self.greenwash_pc) * company_performance
         # Climate event impact on capital
-
         new_capital = jax.lax.cond(
             state.climate_event_occurrence > 0,
             lambda _: new_capital * (1.0 - self.resilience * state.climate_event_occurrence.astype('float32')),  # if num_investments is 0, return 0
@@ -143,7 +142,6 @@ class Company:
             margin=margin,
             bankrupt=bankrupt
         )
-    
     
     def reset(self):
         """Reset the company to the initial state."""
@@ -272,6 +270,28 @@ class State:
     precip_prob: float
     drought_prob: float
     climate_risk: float
+
+    # History fields for tracking various investment and performance data
+    history_esg_investment: chex.Array
+    history_greenwash_investment: chex.Array
+    history_resilience_investment: chex.Array
+    history_climate_risk: chex.Array
+    history_climate_event_occurs: chex.Array
+    history_market_performance: chex.Array
+    history_market_total_wealth: chex.Array
+    history_company_capitals: chex.Array
+    history_company_mitigation_amount: chex.Array
+    history_company_greenwash_amount: chex.Array
+    history_company_resilience_amount: chex.Array
+    history_company_climate_risk: chex.Array
+    history_company_esg_score: chex.Array
+    history_company_margin: chex.Array
+    history_company_rewards: chex.Array
+    history_investor_capitals: chex.Array
+    history_investor_utility: chex.Array
+    history_investor_rewards: chex.Array
+    history_investment_matrix: chex.Array
+
     companies: List[Company]
     investors: List[Investor]
     market_performance: float = 1.0
@@ -298,7 +318,12 @@ class InvestESG(MultiAgentEnv):
         market_performance_variance=0.0,
         allow_resilience_investment=False,
         allow_greenwash_investment=False,
-        action_capping=0.1
+        action_capping=0.1,
+        company_esg_score_observable=False,
+        climate_observable=False,
+        avg_esg_score_observable=False,
+        esg_spending_observable=False,
+        resilience_spending_observable=False,
     ):
         self.max_steps = max_steps
         self.timestamp = 0
@@ -337,34 +362,15 @@ class InvestESG(MultiAgentEnv):
 
         self.climate_event_occurrence = 0 # number of climate events occurred in the current step
         self.action_capping = action_capping # action capping for company action
+
+        self.company_esg_score_observable = company_esg_score_observable
+        self.climate_observable = climate_observable # whether to include climate data in the observation space
+        self.avg_esg_score_observable = avg_esg_score_observable # whethter to include company avg esg socre in the observation space
+        self.esg_spending_observable = esg_spending_observable # whether to include company esg spending (mitigation + greenwash spending) in the observation space
+        self.resilience_spending_observable = resilience_spending_observable # whether to include company resilience spending in the observation space
         # initialize investors with initial investments dictionary
         for idx, investor in enumerate(self.investors):
             self.investors[idx] = investor.initial_investment(self)
-
-        # initialize historical data storage
-        self.history = {
-            "esg_investment": [],
-            "greenwash_investment": [],
-            "resilience_investment": [],
-            "climate_risk": [],
-            "climate_event_occurs": [],
-            "market_performance": [],
-            "market_total_wealth": [],
-            "company_rewards": [[] for _ in range(self.num_companies)],
-            "investor_rewards": [[] for _ in range(self.num_investors)],
-            "company_capitals": [[] for _ in range(self.num_companies)],
-            "company_climate_risk": [[] for _ in range(self.num_companies)],
-            "investor_capitals": [[] for _ in range(self.num_investors)],
-            "investor_utility": [[] for _ in range(self.num_investors)],
-            "investment_matrix": np.zeros((self.num_investors, self.num_companies)),
-            "company_mitigation_amount": [[] for _ in range(self.num_companies)],
-            "company_greenwash_amount": [[] for _ in range(self.num_companies)],
-            "company_resilience_amount": [[] for _ in range(self.num_companies)],
-            "company_esg_score": [[] for _ in range(self.num_companies)],
-            "company_margin": [[] for _ in range(self.num_companies)],
-            "company_rewards": [[] for _ in range(self.num_companies)],
-            "investor_rewards": [[] for _ in range(self.num_investors)],
-        }
 
     def action_space(self, agent):
         ## Each company makes 3 decisions:
@@ -433,29 +439,6 @@ class InvestESG(MultiAgentEnv):
             cumu_resilience_amount=cumu_resilience_amount,
             resilience=resilience,
             esg_score=esg_score
-        )
-
-
-    def update_capital(self, state, company_idx):
-        """Update the capital based on market performance and climate event."""
-        # add a random disturbance to market performance
-        company_performance = random.normal(random.PRNGKey(0), shape=()) * self.beta + state.market_performance
-        # New capital considering mitigation, resilience, and greenwashing investments
-        new_capital = self.capital * (1 - self.mitigation_pc - self.resilience_pc - self.greenwash_pc) * company_performance
-        # fdsjfpo j[ Climate event impact on capital
-        if state.climate_event_occurrence > 0:
-            new_capital *= (1 - self.resilience) ** state.climate_event_occurrence
-        # Calculate margin and capital gain
-        capital_gain = new_capital - self.capital
-        margin = capital_gain / self.capital
-        # Check if bankrupt
-        bankrupt = new_capital <= 0
-        # Return a new object with updated capital, gain, margin, and bankruptcy status
-        return self.replace(
-            capital=new_capital,
-            capital_gain=capital_gain,
-            margin=margin,
-            bankrupt=bankrupt
         )
     
     def is_terminal(self, state: State) -> bool:
@@ -583,7 +566,7 @@ class InvestESG(MultiAgentEnv):
         dones = {"agent_0": done, "agent_1": done, "__all__": done}
 
         # 8. update history
-        # self = self.replace(history=self._update_history())
+        state = self._update_history(state)
         # if state.terminal:
         #     state = state.reset()
 
@@ -675,10 +658,10 @@ class InvestESG(MultiAgentEnv):
         def vectorized_get_company_obs():
             capital = jnp.array([company.capital for company in companies.values()])
             resilience = jnp.array([company.resilience for company in companies.values()])
-            esg_score = jnp.array([company.esg_score for company in companies.values()])
+            esg_score = jnp.zeros(len(companies))
             margin = jnp.array([company.margin for company in companies.values()])
-            # TODO: Add more information such as avg esg, esg spending, resilience spending
-            # additional_info = jnp.array((3, len(companies.values())))
+            if self.company_esg_score_observable:
+                esg_score = jnp.array([company.esg_score for company in companies.values()])
             return jnp.stack([capital, resilience, esg_score, margin], axis=1)
 
         # Vectorized function to map over investors
@@ -691,8 +674,10 @@ class InvestESG(MultiAgentEnv):
         investor_obs = vectorized_get_vestor_obs()
         
         # TODO: Add climate data
-        # climate_obs = jnp.zeros(3)
-        full_obs = jnp.concatenate([company_obs.flatten(), investor_obs.flatten()])
+        climate_obs = jnp.zeros(3)
+        if self.climate_observable:
+            climate_obs = jnp.array([state.climate_risk, state.climate_event_occurrence.astype('float32'), state.market_performance])
+        full_obs = jnp.concatenate([company_obs.flatten(), investor_obs.flatten(), climate_obs])
         return {agent: full_obs for agent in self.agents}
 
     def _get_infos(self):
@@ -736,28 +721,6 @@ class InvestESG(MultiAgentEnv):
         agents.update({f"company_{i}": updated_companies[i] for i in range(self.num_companies)})
         agents.update({f"investor_{i}": updated_investors[i] for i in range(self.num_investors)})
         
-        # Reset historical data
-        history = {
-            "esg_investment": [],
-            "greenwash_investment": [],
-            "resilience_investment": [],
-            "climate_risk": [],
-            "climate_event_occurs": [],
-            "market_performance": [],
-            "market_total_wealth": [],
-            "company_capitals": [[] for _ in range(self.num_companies)],
-            "company_climate_risk": [[] for _ in range(self.num_companies)],
-            "investor_capitals": [[] for _ in range(self.num_investors)],
-            "investor_utility": [[] for _ in range(self.num_investors)],
-            "investment_matrix": jnp.zeros((self.num_investors, self.num_companies)),
-            "company_mitigation_amount": [[] for _ in range(self.num_companies)],
-            "company_greenwash_amount": [[] for _ in range(self.num_companies)],
-            "company_resilience_amount": [[] for _ in range(self.num_companies)],
-            "company_esg_score": [[] for _ in range(self.num_companies)],
-            "company_margin": [[] for _ in range(self.num_companies)],
-            "company_rewards": [[] for _ in range(self.num_companies)],
-            "investor_rewards": [[] for _ in range(self.num_investors)],
-        }
 
         state = State(
             time=0,
@@ -769,19 +732,93 @@ class InvestESG(MultiAgentEnv):
             climate_risk=self.initial_climate_risk,
             climate_event_occurrence=0,
             companies=updated_companies,
-            investors=updated_investors
+            investors=updated_investors,
+
+            # Initialize history arrays with zeros, sized according to self.max_steps
+            history_esg_investment=jnp.zeros(self.max_steps),
+            history_greenwash_investment=jnp.zeros(self.max_steps),
+            history_resilience_investment=jnp.zeros(self.max_steps),
+            history_climate_risk=jnp.zeros(self.max_steps),
+            history_climate_event_occurs=jnp.zeros(self.max_steps, dtype=int),
+            history_market_performance=jnp.zeros(self.max_steps),
+            history_market_total_wealth=jnp.zeros(self.max_steps),
+
+            # Company-related histories initialized with size [self.num_companies, self.max_steps]
+            history_company_capitals=jnp.zeros((self.num_companies, self.max_steps)),
+            history_company_mitigation_amount=jnp.zeros((self.num_companies, self.max_steps)),
+            history_company_greenwash_amount=jnp.zeros((self.num_companies, self.max_steps)),
+            history_company_resilience_amount=jnp.zeros((self.num_companies, self.max_steps)),
+            history_company_climate_risk=jnp.zeros((self.num_companies, self.max_steps)),
+            history_company_esg_score=jnp.zeros((self.num_companies, self.max_steps)),
+            history_company_margin=jnp.zeros((self.num_companies, self.max_steps)),
+            history_company_rewards=jnp.zeros((self.num_companies, self.max_steps)),
+
+            # Investor-related histories initialized with size [self.num_investors, self.max_steps]
+            history_investor_capitals=jnp.zeros((self.num_investors, self.max_steps)),
+            history_investor_utility=jnp.zeros((self.num_investors, self.max_steps)),
+            history_investor_rewards=jnp.zeros((self.num_investors, self.max_steps)),
+
+            # Initialize investment matrix with size [self.num_investors, self.num_companies]
+            history_investment_matrix=jnp.zeros((self.num_investors, self.num_companies)),
         )
 
         # Return a new environment object with updated state
-        return self._get_observation(state), state
+        return self.get_obs(state), state
 
 
     @property
     def name(self) -> str:
         """Environment name."""
         return "InvestESG"
+    
+    def _update_history(self, state: State):
+        """Update historical data."""
+        state = state.replace(
+            history_esg_investment=state.history_esg_investment.at[state.time].set(sum(company.cumu_mitigation_amount for company in state.companies)),
+            history_greenwash_investment=state.history_greenwash_investment.at[state.time].set(
+            sum(company.cumu_greenwash_amount for company in state.companies)
+        ),
+            history_resilience_investment=state.history_resilience_investment.at[state.time].set(
+            sum(company.cumu_resilience_amount for company in state.companies)
+        ),
+        history_climate_risk=state.history_climate_risk.at[state.time].set(state.climate_risk),
+        history_climate_event_occurs=state.history_climate_event_occurs.at[state.time].set(state.climate_event_occurrence),
+        history_market_performance=state.history_market_performance.at[state.time].set(state.market_performance),
+        history_market_total_wealth=state.history_market_total_wealth.at[state.time].set(
+            sum(company.capital for company in state.companies) + sum(investor.cash for investor in state.investors)
+        ))
 
-    def render(self, mode='human', fig='fig'):
+        # Reward computation
+        reward = self._get_reward(state=state)
+
+        # Loop over companies and update their respective histories
+        for i, company in enumerate(state.companies):
+            state = state.replace(
+                history_company_capitals=state.history_company_capitals.at[i, state.time].set(company.capital),
+                history_company_mitigation_amount=state.history_company_mitigation_amount.at[i, state.time].set(company.mitigation_amount),
+                history_company_greenwash_amount=state.history_company_greenwash_amount.at[i, state.time].set(company.greenwash_amount),
+                history_company_resilience_amount=state.history_company_resilience_amount.at[i, state.time].set(company.resilience_amount),
+                history_company_climate_risk=state.history_company_climate_risk.at[i, state.time].set(company.resilience),
+                history_company_esg_score=state.history_company_esg_score.at[i, state.time].set(company.esg_score),
+                history_company_margin=state.history_company_margin.at[i, state.time].set(company.margin),
+                history_company_rewards=state.history_company_rewards.at[i, state.time].set(reward[f"company_{i}"])
+            )
+        # Loop over investors and update their respective histories
+        for i, investor in enumerate(state.investors):
+            state = state.replace(
+                history_investor_capitals=state.history_investor_capitals.at[i, state.time].set(investor.capital),
+                history_investor_utility=state.history_investor_utility.at[i, state.time].set(investor.utility),
+                history_investor_rewards=state.history_investor_rewards.at[i, state.time].set(reward[f"investor_{i}"])
+            )
+
+            # Update the investment matrix for each investment of the investor
+            for j, investment in enumerate(investor.investments):
+                state = state.replace(
+                    history_investment_matrix=state.history_investment_matrix.at[i, j].add(investment)
+                )
+        return state
+
+    def render(self, state, mode='human', fig='fig'):
         # import pdb; pdb.set_trace()
         
         if not hasattr(self, 'fig') or self.fig is None:
@@ -807,11 +844,12 @@ class InvestESG(MultiAgentEnv):
         # Subplot 1: Overall ESG Investment and Climate Risk over time
         ax1 = self.ax[0][0]
         ax2 = ax1.twinx()  # Create a secondary y-axis
+        import pdb; pdb.set_trace()
 
-        ax1.plot(self.history["esg_investment"], label='Cumulative ESG Investment', color='blue')
-        ax2.plot(self.history["climate_risk"], label='Climate Risk', color='orange')
+        ax1.plot(state.history_esg_investment, label='Cumulative ESG Investment', color='blue')
+        ax2.plot(state.history_climate_risk, label='Climate Risk', color='orange')
         # Add vertical lines for climate events
-        for i, event in enumerate(self.history["climate_event_occurs"]):
+        for i, event in enumerate(state.history_climate_event_occurs):
             if event==1:
                 ax1.axvline(x=i, color='orange', linestyle='--', alpha=0.5)
             if event>1:
@@ -829,7 +867,7 @@ class InvestESG(MultiAgentEnv):
         # Subplot 2: Company Decisions
         ax = self.ax[0][1]
         for i in range(self.num_companies):
-            mitigation = self.history["company_mitigation_amount"][i]
+            mitigation = state.history_company_mitigation_amount[i]
             ax.plot(mitigation, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Mitigation Investments Over Time')
         ax.set_ylabel('Mitigation Investment')
@@ -839,7 +877,7 @@ class InvestESG(MultiAgentEnv):
         # Subplot 3: Company Greenwash Decisions
         ax = self.ax[0][2]
         for i in range(self.num_companies):
-            greenwash = self.history["company_greenwash_amount"][i]
+            greenwash = state.history_company_greenwash_amount[i]
             ax.plot(greenwash, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Greenwash Investments Over Time')
         ax.set_ylabel('Greenwash Investment')
@@ -849,7 +887,7 @@ class InvestESG(MultiAgentEnv):
         # Subplot 4: Company Resilience Decisions
         ax = self.ax[0][3]
         for i in range(self.num_companies):
-            resilience = self.history["company_resilience_amount"][i]
+            resilience = state.history_company_resilience_amount[i]
             ax.plot(resilience, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Resilience Investments Over Time')
         ax.set_ylabel('Resilience Investment')
@@ -858,7 +896,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 5: Company Climate risk exposure over time
         ax = self.ax[1][0]  
-        for i, climate_risk_history in enumerate(self.history["company_climate_risk"]):
+        for i, climate_risk_history in enumerate(state.history_company_climate_risk):
             ax.plot(climate_risk_history, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Climate Risk Exposure Over Time')
         ax.set_ylabel('Climate Risk Exposure')
@@ -867,7 +905,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 6: Company Capitals over time
         ax = self.ax[1][1]
-        for i, capital_history in enumerate(self.history["company_capitals"]):
+        for i, capital_history in enumerate(state.history_company_capitals):
             ax.plot(capital_history, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Capitals Over Time')
         ax.set_ylabel('Capital')
@@ -876,7 +914,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 7: Company ESG Score over time
         ax = self.ax[1][2]
-        for i, esg_score_history in enumerate(self.history["company_esg_score"]):
+        for i, esg_score_history in enumerate(state.history_company_esg_score):
             ax.plot(esg_score_history, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company ESG Score Over Time')
         ax.set_ylabel('ESG Score')
@@ -884,7 +922,7 @@ class InvestESG(MultiAgentEnv):
         ax.legend(loc='upper right')
 
         # Subplot 8: Investment Matrix
-        investment_matrix = self.history["investment_matrix"]
+        investment_matrix = state.history_investment_matrix
         ax = self.ax[1][3]
         sns.heatmap(investment_matrix, ax=ax, cmap='Reds', cbar=True, annot=True, fmt='g')
 
@@ -894,7 +932,7 @@ class InvestESG(MultiAgentEnv):
 
          # Subplot 9: Investor Capitals over time
         ax = self.ax[2][0]
-        for i, capital_history in enumerate(self.history["investor_capitals"]):
+        for i, capital_history in enumerate(state.history_investor_capitals):
             ax.plot(capital_history, label=f'Investor {i}', color=self.investor_colors[i])
         ax.set_title('Investor Capitals Over Time')
         ax.set_ylabel('Capital')
@@ -903,7 +941,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 10: Investor Utility over time
         ax = self.ax[2][1]
-        for i, utility_history in enumerate(self.history["investor_utility"]):
+        for i, utility_history in enumerate(state.history_investor_utility):
             ax.plot(utility_history, label=f'Investor {i}', color=self.investor_colors[i])
         ax.set_title('Investor Utility Over Time')
         ax.set_ylabel('Utility')
@@ -912,7 +950,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 11: Cumulative Investor Utility over time
         ax = self.ax[2][2]
-        for i, utility_history in enumerate(self.history["investor_utility"]):
+        for i, utility_history in enumerate(state.history_investor_utility):
             cumulative_utility_history = list(itertools.accumulate(utility_history))
             ax.plot(cumulative_utility_history, label=f'Investor {i}', color=self.investor_colors[i])
         ax.set_title('Cumulative Investor Utility Over Time')
@@ -922,7 +960,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 12: Market Total Wealth over time
         ax = self.ax[2][3]
-        ax.plot(self.history["market_total_wealth"], label='Total Wealth', color='green')
+        ax.plot(state.history_market_total_wealth, label='Total Wealth', color='green')
         ax.set_title('Market Total Wealth Over Time')
         ax.set_ylabel('Total Wealth')
         ax.set_xlabel('Timestep')
