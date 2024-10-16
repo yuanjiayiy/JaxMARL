@@ -781,6 +781,7 @@ class InvestESG(MultiAgentEnv):
             # Initialize investment matrix with size [self.num_investors, self.num_companies]
             history_investment_matrix=jnp.zeros((self.num_investors, self.num_companies)),
         )
+        self.fig = None
 
         # Return a new environment object with updated state
         return self.get_obs(state), state
@@ -839,7 +840,6 @@ class InvestESG(MultiAgentEnv):
         return state
 
     def render(self, state, mode='human', fig='fig'):
-        # import pdb; pdb.set_trace()
         
         if not hasattr(self, 'fig') or self.fig is None:
             # Initialize the plot only once
@@ -848,7 +848,6 @@ class InvestESG(MultiAgentEnv):
             self.ax = self.fig.subplots(3, 4)  # Adjusted to 2 rows and 6 columns
             plt.subplots_adjust(hspace=0.5, wspace=1)  # Increased wspace from 0.2 to 0.3
             plt.ion()  # Turn on interactive mode for plotting
-
             # Generate a color for each company
             self.company_colors = plt.cm.rainbow(np.linspace(0, 1, self.num_companies))
             self.investor_colors = plt.cm.rainbow(np.linspace(0, 1, self.num_investors))
@@ -877,8 +876,9 @@ class InvestESG(MultiAgentEnv):
         ax1.set_title('Overall Metrics Over Time')
         ax1.set_xlabel('Timestep')
         ax1.set_ylabel('Investment in ESG')
+        ax1.set_ylim(0, 200)
         ax2.set_ylabel('Climate Event Probability')
-        ax2.set_ylim(0, 2)  # Set limits for Climate Event Probability
+        ax2.set_ylim(0, 1)  # Set limits for Climate Event Probability
 
         ax1.legend(loc='upper left')
         ax2.legend(loc='upper right')
@@ -990,7 +990,7 @@ class InvestESG(MultiAgentEnv):
         # Update the plots
         self.canvas.draw()
         self.canvas.flush_events()
-        plt.pause(0.001)  # Pause briefly to update plots
+        # plt.pause(0.001)  # Pause briefly to update plots
 
         # TODO: Consider generate videos later
         if mode == 'human':
