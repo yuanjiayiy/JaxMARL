@@ -1,0 +1,25 @@
+"LR": 2.5e-4
+"NUM_ENVS": 64
+"NUM_STEPS": 100
+"TOTAL_TIMESTEPS": 1e4
+"UPDATE_EPOCHS": 4
+"NUM_MINIBATCHES": 4
+"GAMMA": 0.99
+"GAE_LAMBDA": 0.95
+"CLIP_EPS": 0.2
+"ENT_COEF": 0.01
+"VF_COEF": 0.5
+"MAX_GRAD_NORM": 0.5
+"ACTIVATION": "relu"
+"SEED": 30
+"ENV_NAME": "investesg"
+"ENV_KWARGS": {
+  "num_companies": 3,
+  "num_investors": 5
+}
+"ANNEAL_LR": True
+"DISABLE_JIT": False
+"DEVICE": 0
+"ENTITY": ""
+"PROJECT": "jaxmarl-investesg"
+"WANDB_MODE": "online"

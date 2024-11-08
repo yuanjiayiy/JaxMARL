@@ -18,7 +18,7 @@ from matplotlib.figure import Figure
 from matplotlib.colors import ListedColormap, Normalize
 import seaborn as sns
 import itertools
-jax.config.update('jax_numpy_dtype_promotion', 'strict')
+jax.config.update('jax_numpy_dtype_promotion', 'standard')
 
 @struct.dataclass
 class Company:
@@ -169,13 +169,13 @@ class Investor:
     utility: float = 0.0
 
     def initialize_investor(self, capital=6.0, esg_preference=0.0):
-        capital = float(capital)
+        capital, esg_preference, utility = float(capital), float(esg_preference), float(0.0)
         return self.replace(
             initial_capital = capital,
             cash = capital,
             capital = capital,
             esg_preference = esg_preference,
-            utility = 0.0)
+            utility = utility)
     
     def initial_investment(self, environment):
         """Invest in all companies at the beginning of the simulation."""
@@ -262,7 +262,7 @@ class Investor:
         return self.replace(
             capital=self.initial_capital,
             cash=self.initial_capital,
-            utility=0
+            utility=0.0
         )
 
 
@@ -540,9 +540,14 @@ class InvestESG(MultiAgentEnv):
 
         # 4. market performance and climate event evolution
         rng_key = key
-        _, rng_heat = jax.random.split(key) # random number generator for climate event
-        _, rng_precip = jax.random.split(rng_heat) # random number generator for climate event
-        _, rng_drought = jax.random.split(rng_precip) # random number generator for climate event
+
+        rng_heat = jax.random.key(state.time*100) # random number generator for climate event
+        rng_precip = jax.random.key(state.time*500) # random number generator for climate event
+        rng_drought = jax.random.key(state.time*1000) # random number generator for climate event
+
+        # _, rng_heat = jax.random.split(key) # random number generator for climate event
+        # _, rng_precip = jax.random.split(rng_heat) # random number generator for climate event
+        # _, rng_drought = jax.random.split(rng_precip) # random number generator for climate event
         rng_key, rng_key1, rng_key2 = random.split(rng_key, 3)
         
         new_market_performance = random.normal(rng_key1) * self.market_performance_variance + self.market_performance_baseline
@@ -551,6 +556,7 @@ class InvestESG(MultiAgentEnv):
         drought_event = (random.uniform(rng_drought) < state.drought_prob).astype(int)
         
         climate_event_occurrence = heat_event + precip_event + drought_event
+        climate_event_occurrence = jnp.array(0)
         # jax.debug.print("random number {} {} {} {}", random.normal(rng_key1), random.uniform(rng_heat), random.uniform(rng_precip), random.uniform(rng_drought))
         # jax.debug.print("new_market_performance {} {} {} {} {}", new_market_performance, climate_event_occurrence, state.heat_prob, state.precip_prob, state.drought_prob)
         #jax.debug.breakpoint()
@@ -863,17 +869,48 @@ class InvestESG(MultiAgentEnv):
         # Subplot 1: Overall ESG Investment and Climate Risk over time
         ax1 = self.ax[0][0]
         ax2 = ax1.twinx()  # Create a secondary y-axis
+        # import pdb; pdb.set_trace()
+        if len(state.history_esg_investment.shape) == 2:
+            history_esg_investment = state.history_esg_investment[0]
+            history_climate_risk = state.history_climate_risk[0]
+            history_climate_event_occurs = state.history_climate_event_occurs[0] if len(state.history_climate_event_occurs.shape) == 2 else state.history_climate_event_occurs
+            history_company_mitigation_amount = state.history_company_mitigation_amount[0]
+            history_company_greenwash_amount = state.history_company_greenwash_amount[0]
+            history_company_resilience_amount = state.history_company_resilience_amount[0]
+            history_company_climate_risk = state.history_company_climate_risk[0]
+            history_company_capitals = state.history_company_capitals[0]
+            history_company_esg_score = state.history_company_esg_score[0]
+            history_investment_matrix = state.history_investment_matrix[0]
+            history_investor_capitals = state.history_investor_capitals[0]
+            history_investor_utility = state.history_investor_utility[0]
+            history_market_total_wealth = state.history_market_total_wealth[0]
 
-        ax1.plot(state.history_esg_investment, label='Cumulative ESG Investment', color='blue')
-        ax2.plot(state.history_climate_risk, label='Climate Risk', color='orange')
+        else:
+            history_esg_investment = state.history_esg_investment
+            history_climate_risk = state.history_climate_risk
+            history_climate_event_occurs = state.history_climate_event_occurs
+            history_company_mitigation_amount = state.history_company_mitigation_amount
+            history_company_greenwash_amount = state.history_company_greenwash_amount
+            history_company_resilience_amount = state.history_company_resilience_amount
+            history_company_climate_risk = state.history_company_climate_risk
+            history_company_capitals = state.history_company_capitals
+            history_company_esg_score = state.history_company_esg_score
+            history_investment_matrix = state.history_investment_matrix
+            history_investor_capitals = state.history_investor_capitals
+            history_investor_utility = state.history_investor_utility
+            history_market_total_wealth = state.history_market_total_wealth
+
+
+        ax1.plot(history_esg_investment, label='Cumulative ESG Investment', color='blue')
+        ax2.plot(history_climate_risk, label='Climate Risk', color='orange')
         # Add vertical lines for climate events
-        for i, event in enumerate(state.history_climate_event_occurs):
+        for i, event in enumerate(history_climate_event_occurs):
             if event==1:
                 ax1.axvline(x=i, color='orange', linestyle='--', alpha=0.5)
             if event>1:
                 ax1.axvline(x=i, color='red', linestyle='--', alpha=0.5)
 
-        ax1.set_title('Overall Metrics Over Time')
+        ax1.set_title('Overall Metrics Over Time ')
         ax1.set_xlabel('Timestep')
         ax1.set_ylabel('Investment in ESG')
         ax1.set_ylim(0, 200)
@@ -886,7 +923,7 @@ class InvestESG(MultiAgentEnv):
         # Subplot 2: Company Decisions
         ax = self.ax[0][1]
         for i in range(self.num_companies):
-            mitigation = state.history_company_mitigation_amount[i]
+            mitigation = history_company_mitigation_amount[i]
             ax.plot(mitigation, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Mitigation Investments Over Time')
         ax.set_ylabel('Mitigation Investment')
@@ -896,7 +933,7 @@ class InvestESG(MultiAgentEnv):
         # Subplot 3: Company Greenwash Decisions
         ax = self.ax[0][2]
         for i in range(self.num_companies):
-            greenwash = state.history_company_greenwash_amount[i]
+            greenwash = history_company_greenwash_amount[i]
             ax.plot(greenwash, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Greenwash Investments Over Time')
         ax.set_ylabel('Greenwash Investment')
@@ -906,7 +943,7 @@ class InvestESG(MultiAgentEnv):
         # Subplot 4: Company Resilience Decisions
         ax = self.ax[0][3]
         for i in range(self.num_companies):
-            resilience = state.history_company_resilience_amount[i]
+            resilience = history_company_resilience_amount[i]
             ax.plot(resilience, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Resilience Investments Over Time')
         ax.set_ylabel('Resilience Investment')
@@ -915,7 +952,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 5: Company Climate risk exposure over time
         ax = self.ax[1][0]  
-        for i, climate_risk_history in enumerate(state.history_company_climate_risk):
+        for i, climate_risk_history in enumerate(history_company_climate_risk):
             ax.plot(climate_risk_history, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Climate Risk Exposure Over Time')
         ax.set_ylabel('Climate Risk Exposure')
@@ -924,7 +961,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 6: Company Capitals over time
         ax = self.ax[1][1]
-        for i, capital_history in enumerate(state.history_company_capitals):
+        for i, capital_history in enumerate(history_company_capitals):
             ax.plot(capital_history, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company Capitals Over Time')
         ax.set_ylabel('Capital')
@@ -933,7 +970,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 7: Company ESG Score over time
         ax = self.ax[1][2]
-        for i, esg_score_history in enumerate(state.history_company_esg_score):
+        for i, esg_score_history in enumerate(history_company_esg_score):
             ax.plot(esg_score_history, label=f'Company {i}', color=self.company_colors[i])
         ax.set_title('Company ESG Score Over Time')
         ax.set_ylabel('ESG Score')
@@ -941,7 +978,7 @@ class InvestESG(MultiAgentEnv):
         ax.legend(loc='upper right')
 
         # Subplot 8: Investment Matrix
-        investment_matrix = state.history_investment_matrix
+        investment_matrix = history_investment_matrix
         ax = self.ax[1][3]
         sns.heatmap(investment_matrix, ax=ax, cmap='Reds', cbar=True, annot=True, fmt='g')
 
@@ -951,7 +988,7 @@ class InvestESG(MultiAgentEnv):
 
          # Subplot 9: Investor Capitals over time
         ax = self.ax[2][0]
-        for i, capital_history in enumerate(state.history_investor_capitals):
+        for i, capital_history in enumerate(history_investor_capitals):
             ax.plot(capital_history, label=f'Investor {i}', color=self.investor_colors[i])
         ax.set_title('Investor Capitals Over Time')
         ax.set_ylabel('Capital')
@@ -960,7 +997,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 10: Investor Utility over time
         ax = self.ax[2][1]
-        for i, utility_history in enumerate(state.history_investor_utility):
+        for i, utility_history in enumerate(history_investor_utility):
             ax.plot(utility_history, label=f'Investor {i}', color=self.investor_colors[i])
         ax.set_title('Investor Utility Over Time')
         ax.set_ylabel('Utility')
@@ -969,7 +1006,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 11: Cumulative Investor Utility over time
         ax = self.ax[2][2]
-        for i, utility_history in enumerate(state.history_investor_utility):
+        for i, utility_history in enumerate(history_investor_utility):
             cumulative_utility_history = list(itertools.accumulate(utility_history))
             ax.plot(cumulative_utility_history, label=f'Investor {i}', color=self.investor_colors[i])
         ax.set_title('Cumulative Investor Utility Over Time')
@@ -979,7 +1016,7 @@ class InvestESG(MultiAgentEnv):
 
         # Subplot 12: Market Total Wealth over time
         ax = self.ax[2][3]
-        ax.plot(state.history_market_total_wealth, label='Total Wealth', color='green')
+        ax.plot(history_market_total_wealth, label='Total Wealth', color='green')
         ax.set_title('Market Total Wealth Over Time')
         ax.set_ylabel('Total Wealth')
         ax.set_xlabel('Timestep')
@@ -1005,4 +1042,3 @@ if __name__ == "__main__":
     env = InvestESG()
     print(env.action_space())
     print(env.observation_space())
-

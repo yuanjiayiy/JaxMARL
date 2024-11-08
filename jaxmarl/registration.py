@@ -1,3 +1,4 @@
+from jaxmarl.environments.investesg.investesg import InvestESG
 from .environments import (
     SimpleMPE,
     SimpleTagMPE,
@@ -114,6 +115,10 @@ def make(env_id: str, **env_kwargs):
     elif env_id == "jaxnav":
         env = JaxNav(**env_kwargs)
 
+    # 10. InvestESG
+    elif env_id == "investesg":
+        env = InvestESG(**env_kwargs)
+
     return env
 
 registered_envs = [
@@ -146,4 +151,5 @@ registered_envs = [
     "overcooked",
     "coin_game",
     "jaxnav",
+    "investesg"
 ]
